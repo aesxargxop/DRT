@@ -71,7 +71,7 @@ runDRT turn (alpha, beta) = do
                symbol turn (show phase) (dThreshold newAlpha) (snr beta) squeeze internalDelta (tasteCount newAlpha)
         hFlush stdout
 
-        threadDelay 600000 
+        threadDelay 100000 
         runDRT (turn + 1) (beta, newAlpha)
 
 main :: IO ()

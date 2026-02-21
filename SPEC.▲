@@ -1,7 +1,3 @@
----------------------------------------------------------------------
-DIVISION: CORE – TYPES & PRIMITIVES
----------------------------------------------------------------------
-
 -- ================================================================
 -- DATA ATOMS
 -- ================================================================
@@ -98,10 +94,6 @@ STRUCT Signal_Packet
     SIGNATURE      :: Hex_String
 END
 
----------------------------------------------------------------------
-DIVISION: CORE – SYNTAX DIRECTIVES
----------------------------------------------------------------------
-
 KEYWORD: LET, MATCH, CASE, RETURN, IF, THEN, ELSE
 KEYWORD: FUNCTION, PROCESS, STRUCT, ENUM, TYPE, CONST
 KEYWORD: END, END-IF, END-MATCH, END-FUNCTION, END-PROCESS, END-REPEAT, END-FOR
@@ -117,10 +109,6 @@ RULE: All functions are pure; no mutable state.
 RULE: Randomness is deterministic via explicit seed parameters.
 RULE: Record syntax: Struct { field = value, ... }
 RULE: Record update: Record { field = new_value }
-
----------------------------------------------------------------------
-DIVISION: CORE – STANDARD LIBRARY
----------------------------------------------------------------------
 
 -- ================================================================
 -- PAIR OPERATIONS
@@ -320,10 +308,6 @@ END-FUNCTION
 FUNCTION APPEND_TO_AGENT_LOG(Agent :: Agent, Entry :: LogEntry) -> Agent
     RETURN Agent { INTERACTION_LOG = APPEND_LOG_ENTRY(Agent.INTERACTION_LOG, Entry) }
 END-FUNCTION
-
----------------------------------------------------------------------
-DIVISION: CORE – PROCESSES
----------------------------------------------------------------------
 
 -- -----------------------------------------------------------------
 -- Adaptive cybernetic handshake protocol.
