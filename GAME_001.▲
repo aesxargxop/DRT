@@ -1,0 +1,53 @@
+-- ================================================================
+-- GAME: Cybernetic Handshake 1
+-- ================================================================
+
+PROCESS: Execute_Turn
+    INPUT:  state  :: GameState
+    INPUT:  inst_id :: UUID
+    INPUT:  recv_id :: UUID
+    OUTPUT: State_Wrapper<GameState>
+
+    -- 1. DISCERNMENT: Resolve agents and environmental noise floor
+    LET inst_w = LOOKUP(state.AGENTS, inst_id)
+    LET recv_w = LOOKUP(state.AGENTS, recv_id)
+    LET noise  = state.BOARD.LOCAL_STATIC
+
+    MATCH (inst_w, recv_w)
+        CASE (VALUE(inst), VALUE(recv)) ->
+            LET dist_w = GET_DISTANCE(state.BOARD, inst_id, recv_id)
+            MATCH dist_w
+                CASE VALUE(dist) ->
+                    -- 3. REFINEMENT: Recursive Handshake Process
+                    LET (ni, nr, outcome, log) = Refine_Handshake(
+                        inst,
+                        recv,
+                        dist,
+                        noise,
+                        state.RNG_SEED
+                    )
+
+                    -- 4. VERIFICATION: Ensure handshake completed successfully
+                    MATCH outcome
+                        CASE VALID_HANDSHAKE ->
+                            -- Update the Universe with the Refined Agents
+                            LET new_agents = INSERT(
+                                INSERT(state.AGENTS, ni.ID, ni),
+                                nr.ID, nr
+                            )
+                            RETURN VALUE(state {
+                                AGENTS = new_agents,
+                                RNG_SEED = state.RNG_SEED + 1
+                            })
+                        CASE _ ->
+                            RETURN EXCEPTION("PROTOCOL_REJECTED: Insufficient Symmetry")
+                    END-MATCH
+
+                CASE EXCEPTION(e) ->
+                    RETURN EXCEPTION("DISTANCE_FAULT: " + e)
+            END-MATCH
+
+        CASE _ -> 
+            RETURN EXCEPTION("IDENT_FAULT: Agent not found in AGENTS Map")
+    END-MATCH
+END-PROCESS

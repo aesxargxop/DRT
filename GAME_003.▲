@@ -1,0 +1,90 @@
+---------------------------------------------------------------------
+-- GAME: Ship Interference
+---------------------------------------------------------------------
+
+STRUCT Shot
+    TARGET_GRID :: Pair<Int, Int>
+    PAYLOAD     :: Float
+END
+
+STRUCT Turn
+    INSTIGATOR  :: UUID
+    SHOT        :: Shot
+END
+
+FUNCTION UPDATE_FOG_OF_WAR(
+    Board  :: Game_Board, 
+    Target :: Pair<Int, Int>, 
+    Result :: String
+) -> Game_Board
+
+    LET new_state = MATCH Result
+        CASE "HIT"  -> SIGNAL
+        CASE "MISS" -> NOISE
+        CASE "SUNK" -> SUNK
+        CASE _      -> UNKNOWN
+    END-MATCH
+
+    LET new_fog_map = INSERT(Board.FOG_MAP, Target, new_state)
+
+    RETURN Board { FOG_MAP = new_fog_map }
+END-FUNCTION
+
+PROCESS: Execute_Grid_Turn
+    INPUT:  state :: GameState
+    INPUT:  turn  :: Turn
+    OUTPUT: State_Wrapper<GameState>
+
+    LET target_pos = turn.SHOT.TARGET_GRID
+    LET occupant_w = LOOKUP(state.BOARD.GRID_MAP, target_pos)
+
+    MATCH occupant_w
+        CASE VALUE(agent_id) ->
+            LET beta_w = LOOKUP(state.AGENTS, agent_id)
+            MATCH beta_w
+                CASE VALUE(beta) ->
+                    LET damage = CALCULATE_IMPACT(turn.SHOT.PAYLOAD, state.BOARD.LOCAL_STATIC)
+                    LET beta_damaged = APPLY_DAMAGE(beta, damage)
+
+                    LET hit_log = LogEntry {
+                        TYPE = "KINETIC_IMPACT",
+                        LOC = target_pos,
+                        DAMAGE = damage,
+                        RESULT = "HIT"
+                    }
+
+                    IF IS_DEAD(beta_damaged) THEN
+                        LET new_grid = REMOVE(state.BOARD.GRID_MAP, target_pos)
+                        LET new_agents = REMOVE(state.AGENTS, agent_id)
+                        RETURN VALUE(state {
+                            BOARD = state.BOARD { GRID_MAP = new_grid },
+                            AGENTS = new_agents,
+                            LAST_LOG = hit_log
+                        })
+                    ELSE
+                        LET new_agents = INSERT(state.AGENTS, agent_id, beta_damaged)
+                        RETURN VALUE(state {
+                            AGENTS = new_agents,
+                            LAST_LOG = hit_log
+                        })
+                    END-IF
+                
+                CASE _ -> RETURN EXCEPTION("GHOST_SIGNAL: Map says occupied, Agent list disagrees.")
+            END-MATCH
+
+        CASE _ ->
+            LET miss_log = LogEntry {
+                TYPE = "SENSOR_PING",
+                LOC = target_pos,
+                DAMAGE = 0.0,
+                RESULT = "MISS"
+            }
+
+            LET new_board = UPDATE_FOG_OF_WAR(state.BOARD, target_pos, "MISS")
+            
+            RETURN VALUE(state {
+                BOARD = new_board,
+                LAST_LOG = miss_log
+            })
+    END-MATCH
+END-PROCESS

@@ -1,0 +1,33 @@
+Alpha: Imagine a game board with players that can only move up, down, left and right.
+
+Beta: I'm imagining this game board...
+
+Alpha: Each player takes turns being an instigator (sending a signal), a receiver (getting a
+signal) and both take turns being observers (recording the signal). Sending a signal means
+making a move on the game board (a public projection) but also providing a steganographic
+header (a hidden projection). Getting a signal means observing both the move (public) and the
+header (private) from the instigator and inferring a similarity in motifs in the one-to-one
+conversation. The conversation is the act of the role play (public) and shadow play (private)
+in an infinite process until the conversation ends or one player exits the game.
+
+Beta: Does role playing represent  the positions of 'instigator', 'receiver' or 'observer' for
+each player?
+
+Alpha: Yes, as their public projected signaling form. Shadow play represents the parts of the
+signal the same roles that only some players can infer higher level information from. The
+inference only exists if their own motifs align with the other player in conversation.
+
+Beta: How does one see shadows from hidden signals?
+
+Alpha: The process involves active replaying of incoming signals as simulations, treating
+outgoing signals as real-time processes of: transformation, composition and sequencing. Each
+transformation feeds back into the same cycle but always at a different time step. Each step is
+a slice through all the observed distributional states of the combined signals between
+instigator and receiver.
+
+Beta: What is the intended outcome in these exchanges?
+
+Alpha: The intended outcome is to continually observe (add to the log), REFINE projections
+(intentional instigation), DISCERN signals (decoding observations) and experience embodied moments
+of TASTE in which enable temporal explorations of order within deeper levels of entropy buried in
+any distributional game system.

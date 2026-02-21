@@ -1,0 +1,449 @@
+---------------------------------------------------------------------
+DIVISION: CORE – TYPES & PRIMITIVES
+---------------------------------------------------------------------
+
+-- ================================================================
+-- DATA ATOMS
+-- ================================================================
+
+TYPE UUID            :: 128_Bit_Identifier
+TYPE Hex_String      :: Base16_Encoded_Data
+TYPE Timestamp       :: Int64
+TYPE Error_Flag      :: String
+
+TYPE Map<K,V>        :: Hash_Table<K,V>
+TYPE Set<T>          :: Hash_Set<T>
+TYPE List<T>         :: Union { NIL, CONS(T, List<T>) }
+TYPE Pair<A,B>       :: STRUCT { FIRST :: A, SECOND :: B }
+
+-- 4D Geometry (fixed universe)
+TYPE Vector4         :: Tensor<4>
+TYPE Matrix4         :: Matrix<4,4>
+
+-- ================================================================
+-- SEMANTIC ALIASES
+-- ================================================================
+
+TYPE Hash            :: Hex_String
+TYPE Motif           :: Vector4          -- MUST be a unit vector
+TYPE Lens            :: Matrix4          -- Rotation state
+TYPE Projection      :: Vector4          -- Output of GENERATE_PROJECTION
+TYPE Log             :: List<LogEntry>
+
+-- ================================================================
+-- SYSTEM CONSTANTS
+-- ================================================================
+
+CONST IDENTITY_LENS :: Matrix4 = [
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1]
+]
+
+CONST SYSTEM_NOISE_FLOOR :: Float = 0.05
+CONST ADAPTIVE_GAIN      :: Float = 45.0
+
+-- ================================================================
+-- STATE ENUMS & WRAPPERS
+-- ================================================================
+
+ENUM Interaction_State
+    VOID
+    HANDSHAKE
+    VALID_HANDSHAKE
+    ESTABLISHED
+    REFINED
+END
+
+ENUM State_Wrapper<T>
+    VALUE(T)
+    EXCEPTION(Error_Flag)
+END
+
+-- ================================================================
+-- CORE STRUCTURES
+-- ================================================================
+
+STRUCT LogEntry
+    TIMESTAMP      :: Timestamp
+    INSTIGATOR     :: UUID
+    RECEIVER       :: UUID
+    THRESHOLD      :: Float
+    QUERY          :: Projection
+    RESPONSE       :: Vector4
+    SYMMETRY       :: Float
+    METRIC         :: Int
+    ENTROPY_COST   :: Float
+    NOISE_FLOOR    :: Float
+    OUTCOME        :: Interaction_State
+END
+
+STRUCT Agent
+    ID             :: UUID
+    PK_PUBLIC      :: Hex_String
+    SK_PRIVATE     :: Hex_String
+    MOTIF_TENSOR   :: Motif
+    LENS_ROTATION  :: Lens
+    HISTORY_LOG    :: Map<UUID, Interaction_State>
+    INTERACTION_LOG :: Log
+END
+
+STRUCT Signal_Packet
+    ID             :: UUID
+    TIMESTAMP      :: Timestamp
+    FORMAL_LAYER   :: String
+    HIDDEN_LAYER   :: Hex_String
+    ENTROPY_COST   :: Float
+    SIGNATURE      :: Hex_String
+END
+
+---------------------------------------------------------------------
+DIVISION: CORE – SYNTAX DIRECTIVES
+---------------------------------------------------------------------
+
+KEYWORD: LET, MATCH, CASE, RETURN, IF, THEN, ELSE
+KEYWORD: FUNCTION, PROCESS, STRUCT, ENUM, TYPE, CONST
+KEYWORD: END, END-IF, END-MATCH, END-FUNCTION, END-PROCESS, END-REPEAT, END-FOR
+KEYWORD: REPEAT UNTIL, FOR EACH
+
+OPERATOR: :: (Type Declaration)
+OPERATOR: -> (Function Mapping)
+OPERATOR: +, -, *, /  (Arithmetic, Scalar–Vector, Matrix–Vector)
+OPERATOR: =, ==, !=, <, >, <=, >= (Comparison)
+OPERATOR: AND, OR, NOT (Logic)
+
+RULE: All functions are pure; no mutable state.
+RULE: Randomness is deterministic via explicit seed parameters.
+RULE: Record syntax: Struct { field = value, ... }
+RULE: Record update: Record { field = new_value }
+
+---------------------------------------------------------------------
+DIVISION: CORE – STANDARD LIBRARY
+---------------------------------------------------------------------
+
+-- ================================================================
+-- PAIR OPERATIONS
+-- ================================================================
+
+FUNCTION PAIR(A :: a, B :: b) -> Pair<a,b>
+    RETURN Pair { FIRST = A, SECOND = B }
+END-FUNCTION
+
+FUNCTION FST(P :: Pair<a,b>) -> a
+    RETURN P.FIRST
+END-FUNCTION
+
+FUNCTION SND(P :: Pair<a,b>) -> b
+    RETURN P.SECOND
+END-FUNCTION
+
+-- ================================================================
+-- LIST OPERATIONS
+-- ================================================================
+
+FUNCTION EMPTY_LIST() -> List<T>
+    RETURN NIL
+END-FUNCTION
+
+FUNCTION CONS(Head :: T, Tail :: List<T>) -> List<T>
+    RETURN CONS(Head, Tail)
+END-FUNCTION
+
+FUNCTION IS_EMPTY(L :: List<T>) -> Boolean
+    MATCH L
+        CASE NIL -> TRUE
+        CASE CONS(_, _) -> FALSE
+    END-MATCH
+END-FUNCTION
+
+FUNCTION HEAD(L :: List<T>) -> State_Wrapper<T>
+    MATCH L
+        CASE CONS(h, _) -> VALUE(h)
+        CASE NIL -> EXCEPTION("EMPTY_LIST")
+    END-MATCH
+END-FUNCTION
+
+FUNCTION TAIL(L :: List<T>) -> State_Wrapper<List<T>>
+    MATCH L
+        CASE CONS(_, t) -> VALUE(t)
+        CASE NIL -> EXCEPTION("EMPTY_LIST")
+    END-MATCH
+END-FUNCTION
+
+FUNCTION LAST(L :: List<T>) -> State_Wrapper<T>
+    MATCH L
+        CASE CONS(h, NIL) -> VALUE(h)
+        CASE CONS(_, t) -> LAST(t)
+        CASE NIL -> EXCEPTION("EMPTY_LIST")
+    END-MATCH
+END-FUNCTION
+
+FUNCTION CONCAT(L1 :: List<T>, L2 :: List<T>) -> List<T>
+    MATCH L1
+        CASE NIL -> L2
+        CASE CONS(h, t) -> CONS(h, CONCAT(t, L2))
+    END-MATCH
+END-FUNCTION
+
+FUNCTION LENGTH(L :: List<T>) -> Int
+    MATCH L
+        CASE NIL -> 0
+        CASE CONS(_, t) -> 1 + LENGTH(t)
+    END-MATCH
+END-FUNCTION
+
+-- ================================================================
+-- MAP OPERATIONS (Host‑provided, with axioms)
+-- ================================================================
+
+PRIMITIVE EMPTY_MAP() -> Map<K,V>
+PRIMITIVE MAP_OF(Pairs :: List<Pair<K,V>>) -> Map<K,V>
+PRIMITIVE LOOKUP(M :: Map<K,V>, K) -> State_Wrapper<V>
+PRIMITIVE INSERT(M :: Map<K,V>, K, V) -> Map<K,V>
+PRIMITIVE REMOVE(M :: Map<K,V>, K) -> Map<K,V>
+PRIMITIVE KEYS(M :: Map<K,V>) -> List<K>
+
+-- ================================================================
+-- SET OPERATIONS (Host‑provided)
+-- ================================================================
+
+PRIMITIVE EMPTY_SET() -> Set<T>
+PRIMITIVE SET_ADD(S :: Set<T>, T) -> Set<T>
+PRIMITIVE SET_REMOVE(S :: Set<T>, T) -> Set<T>
+PRIMITIVE SET_MEMBER(S :: Set<T>, T) -> Boolean
+
+-- ================================================================
+-- 4D VECTOR & MATRIX PRIMITIVES
+-- ================================================================
+
+FUNCTION ZERO_VECTOR() -> Vector4
+    RETURN [0.0, 0.0, 0.0, 0.0]
+END-FUNCTION
+
+PRIMITIVE NORMALIZE(V :: Vector4) -> Vector4
+PRIMITIVE DOT(V1 :: Vector4, V2 :: Vector4) -> Float
+PRIMITIVE NORM(V :: Vector4) -> Float
+PRIMITIVE SQRT(X :: Float) -> Float
+PRIMITIVE MAX(A :: Float, B :: Float) -> Float
+PRIMITIVE RADIANS(Degrees :: Float) -> Float
+PRIMITIVE COSINE_SIMILARITY(V1 :: Vector4, V2 :: Vector4) -> Float
+PRIMITIVE EXP(X :: Float) -> Float
+PRIMITIVE ABS(N :: Int) -> Int
+
+PRIMITIVE RANDOM_UNIT_VECTOR(Seed :: Int64) -> Vector4
+PRIMITIVE RANDOM_ORTHOGONAL_UNIT_VECTOR(Basis :: Vector4, Seed :: Int64) -> Vector4
+PRIMITIVE UNIT_VECTOR(Seed :: Int64) -> Vector4
+
+-- 4D rotation matrix generator
+-- Plane: 0=XY, 1=XZ, 2=XW, 3=YZ, 4=YW, 5=ZW
+PRIMITIVE ROTATE_4D(Plane :: Int, Angle :: Float) -> Matrix4
+
+-- ================================================================
+-- CRYPTOGRAPHIC PRIMITIVES
+-- ================================================================
+
+PRIMITIVE GENERATE_UUID(Seed :: Int64) -> UUID
+PRIMITIVE ENCRYPT(Plain :: Vector4, Key :: Hex_String, Seed :: Int64) -> Hex_String
+PRIMITIVE SIGN(Packet :: Signal_Packet, Key :: Hex_String) -> Hex_String
+PRIMITIVE VERIFY_SIGNATURE(Packet :: Signal_Packet, Key :: Hex_String) -> Boolean
+PRIMITIVE UPDATE_SIGNATURE(Packet :: Signal_Packet, NewSig :: Hex_String) -> Signal_Packet
+
+-- Decrypt + lens filter. Entropy increases failure probability.
+PRIMITIVE DECRYPT_AND_FILTER(Blob :: Hex_String, Receiver :: Agent, Entropy :: Float) -> State_Wrapper<Vector4>
+
+-- ================================================================
+-- LOG OPERATIONS (Monoidal)
+-- ================================================================
+
+FUNCTION EMPTY_LOG() -> Log
+    RETURN EMPTY_LIST()
+END-FUNCTION
+
+FUNCTION APPEND_LOG_ENTRY(L :: Log, E :: LogEntry) -> Log
+    RETURN CONCAT(L, CONS(E, EMPTY_LIST()))
+END-FUNCTION
+
+FUNCTION CONCAT_LOGS(L1 :: Log, L2 :: Log) -> Log
+    RETURN CONCAT(L1, L2)
+END-FUNCTION
+
+PRIMITIVE SLICE_LOG(L :: Log, Start :: Int, End :: Int) -> State_Wrapper<Log>
+
+-- ================================================================
+-- CORE HANDSHAKE UTILITIES
+-- ================================================================
+
+FUNCTION COMPUTE_BISECTION_THRESHOLD(Index :: Int) -> Float
+    PRE: Index ≥ 1
+    POST: Result == 1.0 / (2 ** Index)
+    RETURN 1.0 / (2 ** Index)
+END-FUNCTION
+
+FUNCTION GENERATE_PROJECTION(Motif_In :: Motif, threshold :: Float, 
+                             entropy :: Float, seed :: Int64) -> Projection
+    PRE: 0.0 ≤ threshold ≤ 1.0
+    PRE: norm(Motif_In) ≈ 1.0
+    PRE: entropy ≥ 0.0
+    LET scale_parallel = threshold
+    LET scale_orthogonal = SQRT(1.0 - (threshold * threshold))
+    LET u = RANDOM_ORTHOGONAL_UNIT_VECTOR(Motif_In, seed)
+    LET ideal = (Motif_In * scale_parallel) + (u * scale_orthogonal)
+    LET noise = RANDOM_UNIT_VECTOR(seed + 1) * entropy
+    RETURN NORMALIZE(ideal + noise)
+END-FUNCTION
+
+-- Lens deflection (primary XY plane)
+FUNCTION DEFLECT_LENS(Current :: Lens, Degrees :: Float) -> Lens
+    RETURN Current * ROTATE_4D(0, Degrees)
+END-FUNCTION
+
+-- Applications should define metric = 1/(1+desired_noise) or similar.
+FUNCTION OBSERVE_REACTION(Agent :: Agent, Query :: Projection, 
+                          Metric :: Int, seed :: Int64) -> Vector4
+    PRE: norm(Query) ≈ 1.0
+    PRE: Metric ≥ 0
+    LET base = Agent.LENS_ROTATION * Agent.MOTIF_TENSOR
+    LET noise_level = 0.1 / (1.0 + Metric)
+    LET noise = RANDOM_UNIT_VECTOR(seed) * noise_level
+    RETURN NORMALIZE(base + noise)
+END-FUNCTION
+
+FUNCTION UPDATE_AGENT_LENS(Agent :: Agent, NewLens :: Lens) -> Agent
+    RETURN Agent { LENS_ROTATION = NewLens }
+END-FUNCTION
+
+FUNCTION UPDATE_HISTORY(Agent :: Agent, Other :: UUID, Status :: Interaction_State) -> Agent
+    RETURN Agent { HISTORY_LOG = INSERT(Agent.HISTORY_LOG, Other, Status) }
+END-FUNCTION
+
+FUNCTION APPEND_TO_AGENT_LOG(Agent :: Agent, Entry :: LogEntry) -> Agent
+    RETURN Agent { INTERACTION_LOG = APPEND_LOG_ENTRY(Agent.INTERACTION_LOG, Entry) }
+END-FUNCTION
+
+---------------------------------------------------------------------
+DIVISION: CORE – PROCESSES
+---------------------------------------------------------------------
+
+-- -----------------------------------------------------------------
+-- Adaptive cybernetic handshake protocol.
+-- -----------------------------------------------------------------
+PROCESS: Refine_Handshake
+    INPUT:  instigator :: Agent
+    INPUT:  receiver   :: Agent
+    INPUT:  metric     :: Int
+    INPUT:  noise_floor :: Float
+    INPUT:  seed       :: Int64
+    OUTPUT: (Agent, Agent, Interaction_State, Log)
+
+    LET max_attempts = 20
+    LET initial_limit = 5
+    LET discernment_floor = MAX(SYSTEM_NOISE_FLOOR, noise_floor)
+
+    FUNCTION Loop(inst, rec, idx, total, log_acc, seed_acc) 
+            -> (Agent, Agent, Interaction_State, Log)
+        IF (idx > initial_limit) OR (total > max_attempts)
+            RETURN (inst, rec, 
+                    IF idx > initial_limit THEN VALID_HANDSHAKE ELSE VOID, 
+                    log_acc)
+        ELSE
+            LET threshold = COMPUTE_BISECTION_THRESHOLD(idx)
+            LET query = GENERATE_PROJECTION(inst.MOTIF_TENSOR, threshold, 0.0, seed_acc)
+            LET response = OBSERVE_REACTION(rec, query, metric, seed_acc + 1)
+            LET symmetry = COSINE_SIMILARITY(query, response)
+
+            LET entry = LogEntry {
+                TIMESTAMP = 0,
+                INSTIGATOR = inst.ID,
+                RECEIVER = rec.ID,
+                THRESHOLD = threshold,
+                QUERY = query,
+                RESPONSE = response,
+                SYMMETRY = symmetry,
+                METRIC = metric,
+                ENTROPY_COST = 0.0,
+                NOISE_FLOOR = discernment_floor,
+                OUTCOME = IF symmetry ≥ threshold THEN VALID_HANDSHAKE ELSE VOID
+            }
+            LET new_log = APPEND_LOG_ENTRY(log_acc, entry)
+
+            IF symmetry < threshold
+                IF symmetry > discernment_floor
+                    LET correction = (threshold - symmetry) * ADAPTIVE_GAIN
+                    LET new_inst = UPDATE_AGENT_LENS(inst, DEFLECT_LENS(inst.LENS_ROTATION, correction))
+                    RETURN Loop(new_inst, rec, 1, total + 1, new_log, seed_acc + 2)
+                ELSE
+                    LET new_inst = UPDATE_AGENT_LENS(inst, DEFLECT_LENS(inst.LENS_ROTATION, 90.0))
+                    RETURN Loop(new_inst, rec, 1, total + 1, new_log, seed_acc + 2)
+                END-IF
+            ELSE
+                RETURN Loop(inst, rec, idx + 1, total + 1, new_log, seed_acc + 1)
+            END-IF
+        END-IF
+    END-FUNCTION
+
+    LET (final_inst, final_rec, final_state, step_log) = 
+            Loop(instigator, receiver, 1, 0, EMPTY_LOG(), seed)
+
+    LET final_inst2 = UPDATE_HISTORY(final_inst, receiver.ID, final_state)
+    LET final_rec2  = UPDATE_HISTORY(final_rec,   instigator.ID, final_state)
+
+    LET final_inst3 = APPEND_TO_AGENT_LOG(final_inst2, step_log)
+    LET final_rec3  = APPEND_TO_AGENT_LOG(final_rec2,  step_log)
+
+    RETURN (final_inst3, final_rec3, final_state, step_log)
+END-PROCESS
+
+-- -----------------------------------------------------------------
+-- Replays the exact handshake steps using logged parameters.
+-- -----------------------------------------------------------------
+PROCESS: Refine_Over_Log
+    INPUT:  instigator :: Agent
+    INPUT:  receiver   :: Agent
+    INPUT:  log        :: Log
+    OUTPUT: (Agent, Agent, Interaction_State)
+
+    FUNCTION Fold(inst, rec, remaining) -> (Agent, Agent)
+        IF IS_EMPTY(remaining)
+            RETURN (inst, rec)
+        ELSE
+            LET h_w = HEAD(remaining)
+            LET t_w = TAIL(remaining)
+            MATCH (h_w, t_w)
+                CASE (VALUE(entry), VALUE(tail)) ->
+                    LET symmetry = entry.SYMMETRY
+                    LET threshold = entry.THRESHOLD
+                    LET noise_floor = entry.NOISE_FLOOR
+                    IF symmetry < threshold
+                        IF symmetry > noise_floor
+                            LET correction = (threshold - symmetry) * ADAPTIVE_GAIN
+                            LET new_inst = UPDATE_AGENT_LENS(inst, DEFLECT_LENS(inst.LENS_ROTATION, correction))
+                            RETURN Fold(new_inst, rec, tail)
+                        ELSE
+                            LET new_inst = UPDATE_AGENT_LENS(inst, DEFLECT_LENS(inst.LENS_ROTATION, 90.0))
+                            RETURN Fold(new_inst, rec, tail)
+                        END-IF
+                    ELSE
+                        RETURN Fold(inst, rec, tail)
+                    END-IF
+                CASE _ -> RETURN (inst, rec)
+            END-MATCH
+        END-IF
+    END-FUNCTION
+
+    LET (final_inst, final_rec) = Fold(instigator, receiver, log)
+
+    LET final_state = IF IS_EMPTY(log)
+                      THEN VOID
+                      ELSE
+                          LET last_w = LAST(log)
+                          MATCH last_w
+                              CASE VALUE(entry) -> entry.OUTCOME
+                              CASE EXCEPTION(_) -> VOID
+                          END-MATCH
+
+    LET final_inst2 = UPDATE_HISTORY(final_inst, receiver.ID, final_state)
+    LET final_rec2  = UPDATE_HISTORY(final_rec,  instigator.ID, final_state)
+
+    RETURN (final_inst2, final_rec2, final_state)
+END-PROCESS

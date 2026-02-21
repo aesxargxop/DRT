@@ -1,0 +1,92 @@
+---------------------------------------------------------------------
+-- GAME: Cybernetic Handshake 2
+---------------------------------------------------------------------
+
+PROCESS: Execute_Turn
+    INPUT:  state :: GameState
+    INPUT:  turn  :: Turn
+    OUTPUT: State_Wrapper<GameState>
+
+    LET move_result = APPLY_MOVE(state, turn.PUBLIC_MOVE)
+    
+    MATCH move_result
+        CASE VALUE(state1) ->
+            MATCH (LOOKUP(state1.AGENTS, turn.INSTIGATOR), LOOKUP(state1.AGENTS, turn.RECEIVER))
+                CASE (VALUE(inst), VALUE(rec)) ->
+                    -- 3. DECRYPT SIGNAL
+                    LET discernment = DECRYPT_AND_FILTER(
+                            turn.PRIVATE_SIGNAL.HIDDEN_LAYER,
+                            rec,
+                            turn.PRIVATE_SIGNAL.ENTROPY_COST
+                        )
+                    
+                    -- 4. APPLY OBSERVER EFFECTS
+                    LET state2 = FOLD_OBSERVERS(turn.OBSERVERS, state1, turn, discernment)
+
+                    -- 5. HANDSHAKE PROTOCOL
+                    MATCH discernment
+                        CASE VALUE(_) ->
+                            LET dist_w = GET_DISTANCE(state2.BOARD, inst.ID, rec.ID)
+                            MATCH dist_w
+                                CASE VALUE(d) ->
+                                    LET (ni, nr, outcome, step_log) = Refine_Handshake(
+                                        inst, rec, d,
+                                        state2.BOARD.LOCAL_STATIC,
+                                        state2.RNG_SEED
+                                    )
+                                    
+                                    -- 6. UPDATE AGENTS
+                                    LET ni2 = APPEND_TO_AGENT_LOG(UPDATE_HISTORY(ni, rec.ID, outcome), step_log)
+                                    LET nr2 = APPEND_TO_AGENT_LOG(UPDATE_HISTORY(nr, inst.ID, outcome), step_log)
+                                    
+                                    LET agents1 = INSERT(state2.AGENTS, ni2.ID, ni2)
+                                    LET agents2 = INSERT(agents1, nr2.ID, nr2)
+                                    
+                                    -- 7. UPDATE STATE & ADVANCE
+                                    LET state3 = state2 {
+                                        AGENTS = agents2,
+                                        RNG_SEED = state2.RNG_SEED + 1
+                                    }
+                                    RETURN ADVANCE_TURN(state3)
+                                    
+                                CASE EXCEPTION(e) -> RETURN EXCEPTION("DISTANCE_FAULT: " + e)
+                            END-MATCH
+                        
+                        CASE EXCEPTION(e) ->
+                            -- If signal fails, we still advance the turn, but handshake is skipped
+                            RETURN ADVANCE_TURN(state2)
+                    END-MATCH
+
+                CASE _ -> RETURN EXCEPTION("AGENT_LOOKUP_FAILED")
+            END-MATCH
+            
+        CASE EXCEPTION(e) -> RETURN EXCEPTION("MOVE_FAILED: " + e)
+    END-MATCH
+END-PROCESS
+
+FUNCTION ADVANCE_TURN(State :: GameState) -> State_Wrapper<GameState>
+    LET players = KEYS(State.BOARD.POSITIONS)
+    
+    MATCH HEAD(players)
+        CASE VALUE(first_p) ->
+            IF LENGTH(players) < 2 THEN
+                RETURN EXCEPTION("INSUFFICIENT_PLAYERS")
+            ELSE
+                LET current = State.BOARD.ACTIVE_PLAYER
+                LET next_w = IF current == first_p
+                             THEN HEAD(TAIL(players)) -- Get second player
+                             ELSE VALUE(first_p)      -- Go back to first
+                
+                MATCH next_w
+                    CASE VALUE(next) ->
+                        LET new_board = State.BOARD {
+                            TURN_COUNTER = State.BOARD.TURN_COUNTER + 1,
+                            ACTIVE_PLAYER = next
+                        }
+                        RETURN VALUE(State { BOARD = new_board })
+                    CASE _ -> RETURN EXCEPTION("PLAYER_LIST_CORRUPTION")
+                END-MATCH
+            END-IF
+        CASE _ -> RETURN EXCEPTION("NO_PLAYERS_FOUND")
+    END-MATCH
+END-FUNCTION
